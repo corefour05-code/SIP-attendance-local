@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}SIP Attendance{% endblock %}</title>
+    <title>{% block title %}PSNA IT Department — SIP Attendance{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -14,7 +14,10 @@
         <div class="topnav-inner">
             <a href="/enroll" class="brand">
                 <span class="brand-mark"></span>
-                SIP Attendance
+                <span class="brand-text">
+                    <span class="brand-title">PSNA IT Department</span>
+                    <span class="brand-sub">SIP Attendance</span>
+                </span>
             </a>
             <div class="nav-links">
                 <a href="/enroll" class="{{ 'active' if request.url.path == '/enroll' else '' }}">Enroll</a>

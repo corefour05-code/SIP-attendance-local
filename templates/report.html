@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Report — SIP Attendance{% endblock %}
+{% block title %}Report — PSNA IT Dept SIP Attendance{% endblock %}
 {% block container_class %}wide{% endblock %}
 {% block content %}
 <h1>Attendance Report</h1>
@@ -41,7 +41,7 @@
 </form>
 
 <div class="search-export-row">
-    <input type="text" id="search" placeholder="Search by name or ID" value="{{ q }}">
+    <input type="text" id="search" placeholder="Search by name, ID, or mobile" value="{{ q }}">
     <a id="csv-link" class="btn-link" href="#">Download CSV</a>
     <a id="pdf-link" class="btn-link" href="#">Download PDF</a>
 </div>
@@ -52,6 +52,7 @@
         <tr>
             <th class="sticky-col">ID</th>
             <th class="sticky-col name-col">Name</th>
+            <th>Mobile</th>
             {% for d, s in columns %}
             <th>{{ d }}<br>{{ s|capitalize }}</th>
             {% endfor %}
@@ -60,9 +61,10 @@
     </thead>
     <tbody>
         {% for stu in students %}
-        <tr data-id="{{ stu.student_id }}" data-name="{{ stu.name }}">
+        <tr data-id="{{ stu.student_id }}" data-name="{{ stu.name }}" data-mobile="{{ stu.mobile_number or '' }}">
             <td class="sticky-col">{{ stu.student_id }}</td>
             <td class="sticky-col name-col">{{ stu.name }}</td>
+            <td>{{ stu.mobile_number or '—' }}</td>
             {% for col in columns %}
             <td>
                 {% if stu.cells[col] %}
@@ -76,7 +78,7 @@
         </tr>
         {% endfor %}
         {% if not students %}
-        <tr><td colspan="{{ columns|length + 3 }}" class="empty-row">No students match the current filters.</td></tr>
+        <tr><td colspan="{{ columns|length + 4 }}" class="empty-row">No students match the current filters.</td></tr>
         {% endif %}
     </tbody>
 </table>
@@ -106,7 +108,8 @@ function filterRows() {
         if (!tr.dataset.id) return;
         const id = tr.dataset.id.toLowerCase();
         const name = tr.dataset.name.toLowerCase();
-        tr.style.display = (!q || id.includes(q) || name.includes(q)) ? '' : 'none';
+        const mobile = (tr.dataset.mobile || '').toLowerCase();
+        tr.style.display = (!q || id.includes(q) || name.includes(q) || mobile.includes(q)) ? '' : 'none';
     });
 }
 

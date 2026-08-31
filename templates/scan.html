@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Scan — SIP Attendance{% endblock %}
+{% block title %}Scan — PSNA IT Dept SIP Attendance{% endblock %}
 {% block content %}
 <h1>Attendance Scanner</h1>
 <p class="subtitle">Point the camera at a student to mark today's session automatically.</p>
@@ -141,6 +141,37 @@ let lastFaces = null;
 let lastSeenAt = 0;
 const TRACK_PERSIST_MS = 900;
 
+// Speak the matched student's name out loud. Only announced when a
+// student_id newly appears in a *real* server response (not a cached
+// track-persist re-render), so a face held continuously in frame is spoken
+// once, not on every ~60ms poll.
+let previousMatchedIds = new Set();
+
+function speak(text) {
+    if (!('speechSynthesis' in window)) return;
+    try {
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.rate = 1;
+        utter.pitch = 1;
+        utter.lang = 'en-IN';
+        speechSynthesis.speak(utter);
+    } catch (err) {
+        // speech synthesis isn't critical to attendance marking — ignore failures
+    }
+}
+
+function announceMatches(faces) {
+    const currentIds = new Set();
+    (faces || []).forEach((face) => {
+        if (face.status !== 'match') return;
+        currentIds.add(face.student_id);
+        if (!previousMatchedIds.has(face.student_id)) {
+            speak(face.already_marked ? `${face.name}, already marked` : `${face.name}, marked present`);
+        }
+    });
+    previousMatchedIds = currentIds;
+}
+
 function render(faces) {
     const now = Date.now();
     if (faces && faces.length > 0) {
@@ -242,6 +273,7 @@ async function scanLoop() {
             formData.append('image', blob, 'frame.jpg');
             const res = await fetch('/api/scan', { method: 'POST', body: formData });
             const data = await res.json();
+            announceMatches(data.faces);
             render(data.faces);
         } catch (err) {
             idleMsg.textContent = 'Error contacting server: ' + err.message;
@@ -257,6 +289,7 @@ toggleBtn.addEventListener('click', () => {
     toggleBtn.textContent = running ? 'Pause' : 'Resume';
     lastFaces = null;
     lastSeenAt = 0;
+    previousMatchedIds = new Set();
     if (running) {
         idleMsg.textContent = 'Looking for a face…';
         idleMsg.hidden = false;

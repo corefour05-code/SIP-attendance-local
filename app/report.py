@@ -78,20 +78,20 @@ def build_report(conn, date_from: str, date_to: str, session_filter: str, status
         like = f"%{q}%"
         rows = conn.execute(
             """
-            SELECT s.student_id, s.name
+            SELECT s.student_id, s.name, s.mobile_number
             FROM students s
             JOIN embeddings e ON e.student_id = s.student_id
-            WHERE s.name LIKE ? OR s.student_id LIKE ?
+            WHERE s.name LIKE ? OR s.student_id LIKE ? OR s.mobile_number LIKE ?
             GROUP BY s.student_id
             HAVING COUNT(e.id) >= 5
             ORDER BY s.student_id
             """,
-            (like, like),
+            (like, like, like),
         ).fetchall()
     else:
         rows = conn.execute(
             """
-            SELECT s.student_id, s.name
+            SELECT s.student_id, s.name, s.mobile_number
             FROM students s
             JOIN embeddings e ON e.student_id = s.student_id
             GROUP BY s.student_id
@@ -109,7 +109,7 @@ def build_report(conn, date_from: str, date_to: str, session_filter: str, status
     total = len(columns)
     students = []
     for r in rows:
-        sid, name = r["student_id"], r["name"]
+        sid, name, mobile_number = r["student_id"], r["name"], r["mobile_number"]
         cells = {}
         present = 0
         for col in columns:
@@ -119,7 +119,15 @@ def build_report(conn, date_from: str, date_to: str, session_filter: str, status
                 present += 1
         pct = (present / total * 100) if total else 0.0
         students.append(
-            {"student_id": sid, "name": name, "cells": cells, "present": present, "total": total, "pct": pct}
+            {
+                "student_id": sid,
+                "name": name,
+                "mobile_number": mobile_number,
+                "cells": cells,
+                "present": present,
+                "total": total,
+                "pct": pct,
+            }
         )
 
     if status_filter == "absent":
@@ -159,20 +167,20 @@ def render_pdf(data: dict) -> bytes:
     elements.append(Paragraph(f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
     elements.append(Spacer(1, 8))
 
-    header = ["ID", "Name"] + [f"{d[5:]} {s[:1].upper()}" for d, s in data["columns"]] + ["%"]
+    header = ["ID", "Name", "Mobile"] + [f"{d[5:]} {s[:1].upper()}" for d, s in data["columns"]] + ["%"]
     table_data = [header]
     for stu in data["students"]:
-        row = [stu["student_id"], stu["name"]]
+        row = [stu["student_id"], stu["name"], stu["mobile_number"] or "—"]
         for col in data["columns"]:
             row.append("P" if stu["cells"][col] else "A")
         row.append(f"{stu['pct']:.0f}")
         table_data.append(row)
 
     avail_width = page_size[0] - 20 * mm
-    id_w, name_w, pct_w = 16 * mm, 30 * mm, 12 * mm
-    remaining = max(0, avail_width - id_w - name_w - pct_w)
+    id_w, name_w, mobile_w, pct_w = 16 * mm, 28 * mm, 22 * mm, 12 * mm
+    remaining = max(0, avail_width - id_w - name_w - mobile_w - pct_w)
     col_w = max(6 * mm, remaining / max(1, len(data["columns"])))
-    col_widths = [id_w, name_w] + [col_w] * len(data["columns"]) + [pct_w]
+    col_widths = [id_w, name_w, mobile_w] + [col_w] * len(data["columns"]) + [pct_w]
 
     t = Table(table_data, colWidths=col_widths, repeatRows=1)
     t.setStyle(
