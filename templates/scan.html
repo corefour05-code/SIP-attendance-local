@@ -39,6 +39,17 @@ let facingMode = 'environment';
 // jumps back to a stale position.
 const POLL_GAP_MS = 60;
 
+// When every face currently in frame is already recognized *and* already
+// marked for this session, another full detect+embed+match round trip adds
+// no new information — attendance is already recorded and nobody new is
+// waiting to be identified. Back off to a slower cadence in that case so the
+// server isn't kept continuously CPU-busy re-recognizing someone who's just
+// standing there (this was the main source of the scanner feeling laggy —
+// the reference repo does the same thing by locking its scan loop for ~2.5s
+// after a hit). Any unknown or freshly-marked face snaps the cadence back to
+// POLL_GAP_MS immediately so new arrivals are still picked up fast.
+const SETTLED_POLL_GAP_MS = 1200;
+
 const COLORS = {
     ok: '#1f7a52',
     already: '#9a6a12',
@@ -259,13 +270,15 @@ function captureBlob() {
 
 // Scans back-to-back: the next frame is captured the instant the previous
 // response comes back, so every box tracks continuously — the only latency
-// is one real round trip to the server, no artificial pause layered on top.
+// is one real round trip to the server. The one exception is the settled-gap
+// backoff above, which intentionally throttles once nothing is left to do.
 async function scanLoop() {
     while (true) {
         if (!running || video.videoWidth === 0) {
             await wait(150);
             continue;
         }
+        let gap = POLL_GAP_MS;
         try {
             const blob = await captureBlob();
             if (!blob) continue;
@@ -275,12 +288,16 @@ async function scanLoop() {
             const data = await res.json();
             announceMatches(data.faces);
             render(data.faces);
+
+            const faces = data.faces || [];
+            const allSettled = faces.length > 0 && faces.every((f) => f.status === 'match' && f.already_marked);
+            if (allSettled) gap = SETTLED_POLL_GAP_MS;
         } catch (err) {
             idleMsg.textContent = 'Error contacting server: ' + err.message;
             idleMsg.hidden = false;
             await wait(500);
         }
-        await wait(POLL_GAP_MS);
+        await wait(gap);
     }
 }
 
