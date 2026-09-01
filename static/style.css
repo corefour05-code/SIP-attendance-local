@@ -177,6 +177,54 @@ h1 {
 
 .stat-chip strong { color: var(--ink); font-weight: 650; }
 
+/* ---------- Session summary (report) ---------- */
+
+.card.session-summary-card {
+    padding: 6px 26px;
+}
+
+.session-summary-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 13px 0;
+}
+
+.session-summary-item + .session-summary-item {
+    border-top: 1px solid var(--border-soft);
+}
+
+.session-summary-name {
+    font-size: 14px;
+    font-weight: 650;
+    color: var(--ink);
+    min-width: 120px;
+}
+
+.session-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.session-stat strong {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.session-stat.present strong { color: var(--accent-strong); }
+.session-stat.absent strong { color: var(--red); }
+
+.session-sep {
+    color: var(--border-soft);
+    font-size: 14px;
+    margin: 0 2px;
+}
+
 /* ---------- Tabs ---------- */
 
 .tab-row {

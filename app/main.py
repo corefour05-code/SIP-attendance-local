@@ -270,7 +270,7 @@ async def scan(image: UploadFile = File(...)):
 @app.get("/report")
 def report_page(request: Request):
     with db_session() as conn:
-        date_from, date_to, session_filter, status_filter, q = parse_report_params(request.query_params, conn)
+        date_from, date_to, session_filter, status_filter, q = parse_report_params(request.query_params)
         data = build_report(conn, date_from, date_to, session_filter, status_filter, q)
     return templates.TemplateResponse("report.html", {"request": request, **data})
 
@@ -278,17 +278,27 @@ def report_page(request: Request):
 @app.get("/report/export.csv")
 def report_export_csv(request: Request):
     with db_session() as conn:
-        date_from, date_to, session_filter, status_filter, q = parse_report_params(request.query_params, conn)
+        date_from, date_to, session_filter, status_filter, q = parse_report_params(request.query_params)
         data = build_report(conn, date_from, date_to, session_filter, status_filter, q)
 
     output = io.StringIO()
     writer = csv.writer(output)
-    header = ["Student ID", "Name", "Mobile Number"] + [f"{d} {s.capitalize()}" for d, s in data["columns"]] + ["Attendance %"]
+
+    writer.writerow(["Session", "Total", "Present", "Absent"])
+    for s in data["session_summary"]:
+        label = s["session"].capitalize()
+        if data["date_from"] != data["date_to"]:
+            label += f" ({s['date']})"
+        writer.writerow([label, s["total"], s["present"], s["absent"]])
+    writer.writerow([])
+
+    same_day = data["date_from"] == data["date_to"]
+    col_label = (lambda d, s: s.capitalize()) if same_day else (lambda d, s: f"{d} {s.capitalize()}")
+    header = ["Student ID", "Name", "Mobile Number"] + [col_label(d, s) for d, s in data["columns"]]
     writer.writerow(header)
     for stu in data["students"]:
         row = [stu["student_id"], stu["name"], stu["mobile_number"] or ""]
         row += ["Present" if stu["cells"][col] else "Absent" for col in data["columns"]]
-        row.append(f"{stu['pct']:.1f}")
         writer.writerow(row)
 
     filename = f"attendance_{data['date_from']}_to_{data['date_to']}_{data['session_filter']}_{data['status_filter']}.csv"
@@ -302,7 +312,7 @@ def report_export_csv(request: Request):
 @app.get("/report/export.pdf")
 def report_export_pdf(request: Request):
     with db_session() as conn:
-        date_from, date_to, session_filter, status_filter, q = parse_report_params(request.query_params, conn)
+        date_from, date_to, session_filter, status_filter, q = parse_report_params(request.query_params)
         data = build_report(conn, date_from, date_to, session_filter, status_filter, q)
 
     pdf_bytes = render_pdf(data)

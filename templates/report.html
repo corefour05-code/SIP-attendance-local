@@ -10,6 +10,20 @@
     <span class="stat-chip">{{ date_from }} → {{ date_to }}</span>
 </div>
 
+<div class="card session-summary-card">
+    {% for s in session_summary %}
+    <div class="session-summary-item">
+        <span class="session-summary-name">{{ s.session|capitalize }}{% if date_from != date_to %} · {{ s.date }}{% endif %}:</span>
+        <span class="session-stat total">Total- <strong>{{ s.total }}</strong></span><span class="session-sep">|</span>
+        <span class="session-stat present">Present- <strong>{{ s.present }}</strong></span><span class="session-sep">|</span>
+        <span class="session-stat absent">Absent- <strong>{{ s.absent }}</strong></span>
+    </div>
+    {% endfor %}
+    {% if not session_summary %}
+    <div class="session-summary-item"><span class="session-summary-name">No sessions in the selected range</span></div>
+    {% endif %}
+</div>
+
 <form id="filter-form" method="get" action="/report" class="filter-bar">
     <div>
         <label for="from">From</label>

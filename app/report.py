@@ -1,5 +1,5 @@
 import io
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
@@ -7,22 +7,22 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
+from app.attendance import IST
+
 VALID_SESSIONS = ("all", "morning", "afternoon")
 VALID_STATUSES = ("all", "absent", "present")
 
 
-def get_default_date_range(conn) -> tuple[str, str]:
-    row = conn.execute(
-        "SELECT MIN(session_date) AS mn, MAX(session_date) AS mx FROM attendance"
-    ).fetchone()
-    if row["mn"] and row["mx"]:
-        return row["mn"], row["mx"]
-    today = date.today().isoformat()
+def get_default_date_range() -> tuple[str, str]:
+    """Report defaults to today only (IST, matching the session-date the
+    scanner writes) — not the full attendance history — so opening the page
+    doesn't dump every day ever recorded."""
+    today = datetime.now(IST).date().isoformat()
     return today, today
 
 
-def parse_report_params(query_params, conn) -> tuple[str, str, str, str, str]:
-    default_from, default_to = get_default_date_range(conn)
+def parse_report_params(query_params) -> tuple[str, str, str, str, str]:
+    default_from, default_to = get_default_date_range()
 
     date_from = query_params.get("from") or default_from
     date_to = query_params.get("to") or default_to
@@ -106,6 +106,27 @@ def build_report(conn, date_from: str, date_to: str, session_filter: str, status
     ).fetchall()
     att_set = {(r["student_id"], r["session_date"], r["session"]) for r in att_rows}
 
+    # Headcount for the present/absent summary uses total_enrolled (students
+    # who've actually completed face capture), same denominator as the per-row
+    # % column above. A student still pending capture has no way to ever be
+    # marked present, so counting them toward "Total" would inflate absences
+    # with people who were never scannable that session in the first place.
+    present_by_col: dict[tuple[str, str], int] = {}
+    for r in att_rows:
+        key = (r["session_date"], r["session"])
+        present_by_col[key] = present_by_col.get(key, 0) + 1
+
+    session_summary = [
+        {
+            "date": d,
+            "session": s,
+            "total": total_enrolled,
+            "present": present_by_col.get((d, s), 0),
+            "absent": max(0, total_enrolled - present_by_col.get((d, s), 0)),
+        }
+        for d, s in columns
+    ]
+
     total = len(columns)
     students = []
     for r in rows:
@@ -141,6 +162,7 @@ def build_report(conn, date_from: str, date_to: str, session_filter: str, status
         "columns": columns,
         "students": students,
         "total_enrolled": total_enrolled,
+        "session_summary": session_summary,
         "date_from": date_from,
         "date_to": date_to,
         "session_filter": session_filter,
@@ -165,22 +187,49 @@ def render_pdf(data: dict) -> bytes:
         title += f" — search: \"{data['q']}\""
     elements.append(Paragraph(title, styles["Heading3"]))
     elements.append(Paragraph(f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
-    elements.append(Spacer(1, 8))
+    elements.append(Spacer(1, 10))
 
-    header = ["ID", "Name", "Mobile"] + [f"{d[5:]} {s[:1].upper()}" for d, s in data["columns"]] + ["%"]
+    summary_header = ["Session", "Total", "Present", "Absent"]
+    summary_data = [summary_header]
+    for s in data["session_summary"]:
+        label = s["session"].capitalize()
+        if data["date_from"] != data["date_to"]:
+            label += f" ({s['date']})"
+        summary_data.append([label, s["total"], s["present"], s["absent"]])
+
+    summary_table = Table(summary_data, colWidths=[50 * mm, 25 * mm, 25 * mm, 25 * mm])
+    summary_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#171a21")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f2f2f2")]),
+            ]
+        )
+    )
+    elements.append(summary_table)
+    elements.append(Spacer(1, 12))
+
+    same_day = data["date_from"] == data["date_to"]
+    col_label = (lambda d, s: s.capitalize()) if same_day else (lambda d, s: f"{d} {s.capitalize()}")
+
+    header = ["ID", "Name", "Mobile"] + [col_label(d, s) for d, s in data["columns"]]
     table_data = [header]
     for stu in data["students"]:
         row = [stu["student_id"], stu["name"], stu["mobile_number"] or "—"]
         for col in data["columns"]:
-            row.append("P" if stu["cells"][col] else "A")
-        row.append(f"{stu['pct']:.0f}")
+            row.append("Present" if stu["cells"][col] else "Absent")
         table_data.append(row)
 
     avail_width = page_size[0] - 20 * mm
-    id_w, name_w, mobile_w, pct_w = 16 * mm, 28 * mm, 22 * mm, 12 * mm
-    remaining = max(0, avail_width - id_w - name_w - mobile_w - pct_w)
-    col_w = max(6 * mm, remaining / max(1, len(data["columns"])))
-    col_widths = [id_w, name_w, mobile_w] + [col_w] * len(data["columns"]) + [pct_w]
+    id_w, name_w, mobile_w = 16 * mm, 28 * mm, 22 * mm
+    remaining = max(0, avail_width - id_w - name_w - mobile_w)
+    col_w = max(16 * mm, remaining / max(1, len(data["columns"])))
+    col_widths = [id_w, name_w, mobile_w] + [col_w] * len(data["columns"])
 
     t = Table(table_data, colWidths=col_widths, repeatRows=1)
     t.setStyle(
@@ -188,7 +237,7 @@ def render_pdf(data: dict) -> bytes:
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#171a21")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTSIZE", (0, 0), (-1, -1), 6),
+                ("FONTSIZE", (0, 0), (-1, -1), 6.5),
                 ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
                 ("ALIGN", (2, 0), (-1, -1), "CENTER"),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
